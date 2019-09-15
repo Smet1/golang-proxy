@@ -1,0 +1,6 @@
+protocol: 'https'
+certificate:
+  pem: 'server.pem'
+  key: 'server.key'
+timeout: '10s'
+serve_addr: ':8888'

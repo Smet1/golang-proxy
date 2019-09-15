@@ -8,26 +8,28 @@ import (
 	"time"
 )
 
-func HandleTunneling(w http.ResponseWriter, r *http.Request) {
-	fmt.Println(r.URL)
+func GetHandleTunneling(timeout time.Duration) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
 
-	destConn, err := net.DialTimeout("tcp", r.Host, 10*time.Second)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
-		return
+		destConn, err := net.DialTimeout("tcp", r.Host, timeout)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		hijacker, ok := w.(http.Hijacker)
+		if !ok {
+			http.Error(w, "Hijacking not supported", http.StatusInternalServerError)
+			return
+		}
+		clientConn, _, err := hijacker.Hijack()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		}
+		go transfer(destConn, clientConn)
+		go transfer(clientConn, destConn)
 	}
-	w.WriteHeader(http.StatusOK)
-	hijacker, ok := w.(http.Hijacker)
-	if !ok {
-		http.Error(w, "Hijacking not supported", http.StatusInternalServerError)
-		return
-	}
-	clientConn, _, err := hijacker.Hijack()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
-	}
-	go transfer(destConn, clientConn)
-	go transfer(clientConn, destConn)
+
 }
 
 func transfer(destination io.WriteCloser, source io.ReadCloser) {
@@ -38,6 +40,7 @@ func transfer(destination io.WriteCloser, source io.ReadCloser) {
 
 func HandleHTTP(w http.ResponseWriter, req *http.Request) {
 	fmt.Println(req.URL)
+	fmt.Println("HandleHTTP")
 
 	resp, err := http.DefaultTransport.RoundTrip(req)
 	if err != nil {

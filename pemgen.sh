@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+#openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -nodes -days 365 -subj '/CN=localhost'
+
 case $(uname -s) in
 Linux*) sslConfig=/etc/ssl/openssl.cnf ;;
 Darwin*) sslConfig=/System/Library/OpenSSL/openssl.cnf ;;

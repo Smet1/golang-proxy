@@ -2,13 +2,15 @@ package proxy
 
 import (
 	"crypto/tls"
-	"fmt"
 	"net/http"
 
-	"go.opencensus.io/plugin/ochttp"
+	"github.com/Smet1/golang-proxy/internal/pkg/logger"
+
+	"github.com/go-chi/chi"
+
+	"github.com/sirupsen/logrus"
 
 	"github.com/Smet1/golang-proxy/internal/pkg/proxy"
-	"github.com/go-chi/chi"
 )
 
 type Service struct {
@@ -16,25 +18,21 @@ type Service struct {
 	router *chi.Mux
 }
 
-func (s *Service) GetServer() *http.Server {
+func (s *Service) GetServer(log logrus.Logger) *http.Server {
 	s.router = chi.NewMux()
-	s.router.Route("/", func(r chi.Router) {
-		r.Connect("/", (&ochttp.Handler{
-			Handler: ochttp.WithRouteTag(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				fmt.Println("connect")
-				proxy.HandleTunneling(w, r)
-			}), "connect"),
-		}).ServeHTTP)
-		r.HandleFunc("/", (&ochttp.Handler{
-			Handler: ochttp.WithRouteTag(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				fmt.Println("http")
-				proxy.HandleHTTP(w, r)
-			}), "handle http"),
-		}).ServeHTTP)
-	})
+
+	s.router.Use(logger.GetLoggerMiddleware(log))
+
+	s.router.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodConnect {
+			proxy.GetHandleTunneling(s.Config.Timeout.Duration)
+		} else {
+			proxy.HandleHTTP(w, r)
+		}
+	}))
 
 	return &http.Server{
-		Addr:    ":8888",
+		Addr:    s.Config.ServeAddr,
 		Handler: s.router,
 		// Disable HTTP/2.
 		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)),

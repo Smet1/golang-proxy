@@ -3,36 +3,46 @@ package main
 import (
 	"context"
 	"flag"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 
+	"github.com/Smet1/golang-proxy/internal/pkg/configreader"
+
 	"github.com/Smet1/golang-proxy/internal/app/proxy"
+	"github.com/sirupsen/logrus"
 )
 
 func main() {
-	var pemPath string
-	flag.StringVar(&pemPath, "pem", "server.pem", "path to pem file")
-	var keyPath string
-	flag.StringVar(&keyPath, "key", "server.key", "path to key file")
-	var proto string
-	flag.StringVar(&proto, "proto", "http", "Proxy protocol (http or https)")
+	configPath := flag.String(
+		"config",
+		"./config.yaml",
+		"path of proxy server config",
+	)
 	flag.Parse()
-	if proto != "http" && proto != "https" {
-		log.Fatal("Protocol must be either http or https")
-	}
+
+	log := logrus.New()
 
 	config := proxy.Config{}
+	err := configreader.ReadConfig(*configPath, &config)
+	if err != nil {
+		log.WithError(err).Fatal("can't read config")
+	}
+
+	err = config.Validate()
+	if err != nil {
+		log.WithError(err).Fatal("not valid config")
+	}
+
 	proxyService := proxy.Service{
 		Config: config,
 	}
 
-	server := proxyService.GetServer()
-	if proto == "http" {
+	server := proxyService.GetServer(*log)
+	if config.Protocol == "http" {
 		go func() {
-			log.Printf("http service started on port %s", ":8888")
+			logrus.WithField("port", config.ServeAddr).Info("http service started")
 			if err := server.ListenAndServe(); err != nil {
 				if err == http.ErrServerClosed {
 					log.Println("graceful shutdown")
@@ -43,8 +53,8 @@ func main() {
 		}()
 	} else {
 		go func() {
-			log.Printf("https service started on port %s", ":8888")
-			if err := server.ListenAndServeTLS(pemPath, keyPath); err != nil {
+			logrus.WithField("port", config.ServeAddr).Info("https service started")
+			if err := server.ListenAndServeTLS(config.Certificate.Pem, config.Certificate.Key); err != nil {
 				if err == http.ErrServerClosed {
 					log.Println("graceful shutdown")
 				} else {
