@@ -11,6 +11,7 @@ import (
 	"github.com/Smet1/golang-proxy/internal/pkg/configreader"
 
 	"github.com/Smet1/golang-proxy/internal/app/proxy"
+	"github.com/onrik/logrus/filename"
 	"github.com/sirupsen/logrus"
 )
 
@@ -22,7 +23,11 @@ func main() {
 	)
 	flag.Parse()
 
+	filenameHook := filename.NewHook()
+	filenameHook.Field = "sourcelog"
+
 	log := logrus.New()
+	log.AddHook(filenameHook)
 
 	config := proxy.Config{}
 	err := configreader.ReadConfig(*configPath, &config)
