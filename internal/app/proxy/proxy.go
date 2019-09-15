@@ -4,10 +4,6 @@ import (
 	"crypto/tls"
 	"net/http"
 
-	"github.com/Smet1/golang-proxy/internal/pkg/logger"
-
-	"github.com/go-chi/chi"
-
 	"github.com/sirupsen/logrus"
 
 	"github.com/Smet1/golang-proxy/internal/pkg/proxy"
@@ -15,25 +11,22 @@ import (
 
 type Service struct {
 	Config Config
-	router *chi.Mux
 }
 
-func (s *Service) GetServer(log logrus.Logger) *http.Server {
-	s.router = chi.NewMux()
-
-	s.router.Use(logger.GetLoggerMiddleware(log))
-
-	s.router.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodConnect {
-			proxy.GetHandleTunneling(s.Config.Timeout.Duration)
-		} else {
-			proxy.HandleHTTP(w, r)
-		}
-	}))
+func (s *Service) GetServer(log *logrus.Logger) *http.Server {
+	handlerHTTPS := proxy.GetHandleTunneling(s.Config.Timeout.Duration)
+	handlerHTTP := proxy.GetHandleHTTP()
 
 	return &http.Server{
-		Addr:    s.Config.ServeAddr,
-		Handler: s.router,
+		Addr: s.Config.ServeAddr,
+		//Handler: s.router,
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodConnect {
+				handlerHTTPS(w, r)
+			} else {
+				handlerHTTP(w, r)
+			}
+		}),
 		// Disable HTTP/2.
 		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)),
 	}

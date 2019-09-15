@@ -44,7 +44,7 @@ func main() {
 		Config: config,
 	}
 
-	server := proxyService.GetServer(*log)
+	server := proxyService.GetServer(log)
 	if config.Protocol == "http" {
 		go func() {
 			logrus.WithField("port", config.ServeAddr).Info("http service started")

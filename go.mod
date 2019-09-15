@@ -3,7 +3,6 @@ module github.com/Smet1/golang-proxy
 go 1.12
 
 require (
-	github.com/go-chi/chi v4.0.2+incompatible
 	github.com/google/uuid v1.1.1
 	github.com/konsorten/go-windows-terminal-sequences v1.0.2 // indirect
 	github.com/kr/pretty v0.1.0 // indirect
