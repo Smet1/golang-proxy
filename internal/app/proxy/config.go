@@ -26,6 +26,16 @@ type Config struct {
 	Certificate Certificate `yaml:"certificate"`
 	Timeout     Duration    `yaml:"timeout"`
 	ServeAddr   string      `yaml:"serve_addr"`
+	DB          DB          `yaml:"db"`
+}
+
+type DB struct {
+	Database string `yaml:"database"`
+	Username string `yaml:"username"`
+	Name     string `yaml:"name"`
+	Password string `yaml:"password"`
+	SSLMode  string `yaml:"ssl_mode"`
+	Host     string `yaml:"host"`
 }
 
 type Certificate struct {

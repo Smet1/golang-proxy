@@ -4,3 +4,10 @@ certificate:
   key: 'server.key'
 timeout: '10s'
 serve_addr: ':8888'
+db:
+  database: "postgres"
+  username: ""
+  password: ""
+  name: "postgres"
+  ssl_mode: "disable"
+  host: "1.0.0.0"

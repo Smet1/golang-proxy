@@ -3,10 +3,14 @@ module github.com/Smet1/golang-proxy
 go 1.12
 
 require (
+	github.com/go-sql-driver/mysql v1.4.1 // indirect
 	github.com/google/uuid v1.1.1
 	github.com/gorilla/mux v1.7.3
+	github.com/jmoiron/sqlx v1.2.0
 	github.com/konsorten/go-windows-terminal-sequences v1.0.2 // indirect
 	github.com/kr/pretty v0.1.0 // indirect
+	github.com/lib/pq v1.2.0
+	github.com/mattn/go-sqlite3 v1.11.0 // indirect
 	github.com/onrik/logrus v0.4.1
 	github.com/pkg/errors v0.8.1
 	github.com/sirupsen/logrus v1.4.2

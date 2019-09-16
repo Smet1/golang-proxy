@@ -37,6 +37,8 @@ func main() {
 		log.WithError(err).Fatal("can't read config")
 	}
 
+	logrus.WithField("config", config).Info("started with data")
+
 	err = config.Validate()
 	if err != nil {
 		log.WithError(err).Fatal("not valid config")
