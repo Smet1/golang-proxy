@@ -67,14 +67,21 @@ func transfer(ctx context.Context, destination io.WriteCloser, source io.ReadClo
 	}
 }
 
-func GetHandleHTTP() func(res http.ResponseWriter, req *http.Request) {
+func GetHandleHTTP(client *http.Client) func(res http.ResponseWriter, req *http.Request) {
 	return func(res http.ResponseWriter, req *http.Request) {
 		log := getTraceLogger(req.Context())
 		log.WithField("req", req).Info("got")
 
-		resp, err := http.DefaultTransport.RoundTrip(req)
+		//resp, err := http.DefaultTransport.RoundTrip(req)
+		//if err != nil {
+		//	http.Error(res, err.Error(), http.StatusServiceUnavailable)
+		//	return
+		//}
+		req.RequestURI = ""
+		resp, err := client.Do(req)
 		if err != nil {
 			http.Error(res, err.Error(), http.StatusServiceUnavailable)
+			log.WithField("err", err).Error("can't do request")
 			return
 		}
 

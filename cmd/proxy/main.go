@@ -8,6 +8,8 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/Smet1/golang-proxy/internal/pkg/httpclients"
+
 	"github.com/Smet1/golang-proxy/internal/pkg/configreader"
 
 	"github.com/Smet1/golang-proxy/internal/app/proxy"
@@ -42,6 +44,7 @@ func main() {
 
 	proxyService := proxy.Service{
 		Config: config,
+		Client: httpclients.HTTPClient(),
 	}
 
 	server := proxyService.GetServer(log)
