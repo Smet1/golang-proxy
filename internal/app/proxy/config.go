@@ -22,11 +22,12 @@ func (d *Duration) UnmarshalYAML(unmarshal func(interface{}) error) error {
 }
 
 type Config struct {
-	Protocol    string      `yaml:"protocol"`
-	Certificate Certificate `yaml:"certificate"`
-	Timeout     Duration    `yaml:"timeout"`
-	ServeAddr   string      `yaml:"serve_addr"`
-	DB          DB          `yaml:"db"`
+	Protocol       string      `yaml:"protocol"`
+	Certificate    Certificate `yaml:"certificate"`
+	Timeout        Duration    `yaml:"timeout"`
+	ServeAddrProxy string      `yaml:"serve_addr_proxy"`
+	ServeAddrBurst string      `yaml:"serve_addr_burst"`
+	DB             DB          `yaml:"db"`
 }
 
 type DB struct {

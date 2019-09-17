@@ -187,39 +187,39 @@ VALUES (:request_id, :name, :value)`, h.Arr[i])
 	return nil
 }
 
-func SaveUserRequest(db *sqlx.DB, req *http.Request) error {
+func SaveUserRequest(db *sqlx.DB, req *http.Request) (int, error) {
 	ui := &UserInfo{}
 	ui.FromURL(req.URL)
 
 	idUserInfo, err := ui.Insert(db)
 	if err != nil {
-		return errors.Wrap(err, "can't insert user info")
+		return 0, errors.Wrap(err, "can't insert user info")
 	}
 
 	u := &URL{}
 	u.FromURL(req.URL)
 	idUrl, err := u.Insert(db, idUserInfo)
 	if err != nil {
-		return errors.Wrap(err, "can't insert url")
+		return 0, errors.Wrap(err, "can't insert url")
 	}
 
 	request := &Request{}
 	err = request.FromRequest(req)
 	if err != nil {
-		return errors.Wrap(err, "can't read request")
+		return 0, errors.Wrap(err, "can't read request")
 	}
 
 	idReq, err := request.Insert(db, idUrl)
 	if err != nil {
-		return errors.Wrap(err, "can't insert request")
+		return 0, errors.Wrap(err, "can't insert request")
 	}
 
 	headers := &Headers{}
 	headers.FromRequest(req, idReq)
 	err = headers.Insert(db)
 	if err != nil {
-		return errors.Wrap(err, "can't insert headers")
+		return 0, errors.Wrap(err, "can't insert headers")
 	}
 
-	return nil
+	return idReq, nil
 }

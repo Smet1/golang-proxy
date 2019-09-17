@@ -58,7 +58,7 @@ func (s *Service) ensureDBConn() error {
 	return nil
 }
 
-func (s *Service) GetServer(log *logrus.Logger) *http.Server {
+func (s *Service) GetServerProxy(log *logrus.Logger) *http.Server {
 	err := s.ensureDBConn()
 	if err != nil {
 		log.WithError(err).Fatal("can't ensure connection")
@@ -66,12 +66,36 @@ func (s *Service) GetServer(log *logrus.Logger) *http.Server {
 
 	handlerHTTPS := proxy.GetHandleTunneling(s.Config.Timeout.Duration)
 	handlerHTTP := proxy.GetHandleHTTP(s.Client, s.ConnDB)
+	handlerBurst := proxy.GetBurstHandler(s.Client, s.ConnDB)
+
 	s.router = mux.NewRouter()
 	s.router.HandleFunc("/", handlerHTTPS).Methods(http.MethodConnect)
 	s.router.HandleFunc("/", handlerHTTP)
-
+	s.router.HandleFunc("/burst", handlerBurst).Methods(http.MethodPost)
 	return &http.Server{
-		Addr:    s.Config.ServeAddr,
+		Addr:    s.Config.ServeAddrProxy,
+		Handler: s.router,
+		TLSConfig: &tls.Config{
+			InsecureSkipVerify: true,
+		},
+
+		// Disable HTTP/2.
+		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)),
+	}
+}
+
+func (s *Service) GetServerBurst(log *logrus.Logger) *http.Server {
+	err := s.ensureDBConn()
+	if err != nil {
+		log.WithError(err).Fatal("can't ensure connection")
+	}
+
+	handlerBurst := proxy.GetBurstHandler(s.Client, s.ConnDB)
+
+	s.router = mux.NewRouter()
+	s.router.HandleFunc("/burst", handlerBurst).Methods(http.MethodPost)
+	return &http.Server{
+		Addr:    s.Config.ServeAddrBurst,
 		Handler: s.router,
 		TLSConfig: &tls.Config{
 			InsecureSkipVerify: true,

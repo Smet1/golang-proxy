@@ -49,30 +49,29 @@ func main() {
 		Client: httpclients.HTTPClient(),
 	}
 
-	server := proxyService.GetServer(log)
-	if config.Protocol == "http" {
-		go func() {
-			logrus.WithField("port", config.ServeAddr).Info("http service started")
-			if err := server.ListenAndServe(); err != nil {
-				if err == http.ErrServerClosed {
-					log.Println("graceful shutdown")
-				} else {
-					log.Fatalf("sync service, err: %s", err)
-				}
+	server := proxyService.GetServerProxy(log)
+	serverBurst := proxyService.GetServerBurst(log)
+
+	go func() {
+		logrus.WithField("port", config.ServeAddrBurst).Info("burst service started")
+		if err := serverBurst.ListenAndServe(); err != nil {
+			if err == http.ErrServerClosed {
+				log.Println("graceful shutdown")
+			} else {
+				log.Fatalf("burst service, err: %s", err)
 			}
-		}()
-	} else {
-		go func() {
-			logrus.WithField("port", config.ServeAddr).Info("https service started")
-			if err := server.ListenAndServeTLS(config.Certificate.Pem, config.Certificate.Key); err != nil {
-				if err == http.ErrServerClosed {
-					log.Println("graceful shutdown")
-				} else {
-					log.Fatalf("sync service, err: %s", err)
-				}
+		}
+	}()
+	go func() {
+		logrus.WithField("port", config.ServeAddrProxy).Info("https service started")
+		if err := server.ListenAndServeTLS(config.Certificate.Pem, config.Certificate.Key); err != nil {
+			if err == http.ErrServerClosed {
+				log.Println("graceful shutdown")
+			} else {
+				log.Fatalf("proxy service, err: %s", err)
 			}
-		}()
-	}
+		}
+	}()
 
 	sgnl := make(chan os.Signal, 1)
 	signal.Notify(sgnl,
@@ -83,6 +82,9 @@ func main() {
 	stop := <-sgnl
 
 	if err := server.Shutdown(context.Background()); err != nil {
+		log.Fatal("error on shutdown")
+	}
+	if err := serverBurst.Shutdown(context.Background()); err != nil {
 		log.Fatal("error on shutdown")
 	}
 

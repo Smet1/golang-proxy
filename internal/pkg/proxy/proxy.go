@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -69,14 +70,33 @@ func transfer(ctx context.Context, destination io.WriteCloser, source io.ReadClo
 	}
 }
 
+func GetBurstHandler(client *http.Client, db *sqlx.DB) func(res http.ResponseWriter, req *http.Request) {
+	return func(res http.ResponseWriter, req *http.Request) {
+		log := getTraceLogger(req.Context())
+		log.WithField("req", req).Info("got")
+
+		query := req.URL.Query()
+		_, err := strconv.Atoi(query.Get("id"))
+		if err != nil {
+			ErrResponse(res, http.StatusBadRequest, "invalid id in query")
+
+			log.WithError(err).Error("can't convert id to int")
+			return
+		}
+
+	}
+}
+
 func GetHandleHTTP(client *http.Client, db *sqlx.DB) func(res http.ResponseWriter, req *http.Request) {
 	return func(res http.ResponseWriter, req *http.Request) {
 		log := getTraceLogger(req.Context())
 		log.WithField("req", req).Info("got")
 
-		err := SaveUserRequest(db, req)
+		id, err := SaveUserRequest(db, req)
 		if err != nil {
 			log.WithError(err).Error("can't save user request")
+		} else {
+			res.Header().Add("request_id", strconv.Itoa(id))
 		}
 
 		req.RequestURI = ""
