@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jmoiron/sqlx"
+
 	"github.com/sirupsen/logrus"
 
 	"github.com/Smet1/golang-proxy/internal/pkg/logger"
@@ -67,16 +69,22 @@ func transfer(ctx context.Context, destination io.WriteCloser, source io.ReadClo
 	}
 }
 
-func GetHandleHTTP(client *http.Client) func(res http.ResponseWriter, req *http.Request) {
+func GetHandleHTTP(client *http.Client, db *sqlx.DB) func(res http.ResponseWriter, req *http.Request) {
 	return func(res http.ResponseWriter, req *http.Request) {
 		log := getTraceLogger(req.Context())
 		log.WithField("req", req).Info("got")
 
-		//resp, err := http.DefaultTransport.RoundTrip(req)
-		//if err != nil {
-		//	http.Error(res, err.Error(), http.StatusServiceUnavailable)
-		//	return
-		//}
+		ui := &UserInfo{}
+		ui.FromURL(req.URL)
+
+		insert, err := db.NamedExec(`INSERT INTO user_info(username, password)
+		VALUES (:password, :username) `, ui)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		log.Info(insert)
+
 		req.RequestURI = ""
 		resp, err := client.Do(req)
 		if err != nil {

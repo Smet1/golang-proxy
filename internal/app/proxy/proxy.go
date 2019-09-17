@@ -29,7 +29,7 @@ type Service struct {
 
 func (s *Service) ensureDBConn() error {
 	v := url.Values{}
-	v.Add("ssl-mode", s.Config.DB.SSLMode)
+	v.Add("sslmode", s.Config.DB.SSLMode)
 
 	p := url.URL{
 		Scheme:     s.Config.DB.Database,
@@ -65,7 +65,7 @@ func (s *Service) GetServer(log *logrus.Logger) *http.Server {
 	}
 
 	handlerHTTPS := proxy.GetHandleTunneling(s.Config.Timeout.Duration)
-	handlerHTTP := proxy.GetHandleHTTP(s.Client)
+	handlerHTTP := proxy.GetHandleHTTP(s.Client, s.ConnDB)
 	s.router = mux.NewRouter()
 	s.router.HandleFunc("/", handlerHTTPS).Methods(http.MethodConnect)
 	s.router.HandleFunc("/", handlerHTTP)
@@ -76,6 +76,7 @@ func (s *Service) GetServer(log *logrus.Logger) *http.Server {
 		TLSConfig: &tls.Config{
 			InsecureSkipVerify: true,
 		},
+
 		// Disable HTTP/2.
 		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)),
 	}
