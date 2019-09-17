@@ -76,7 +76,10 @@ VALUES (:scheme, :opaque, :user, :host, :path, :raw_path, :force_query, :raw_que
 
 	res := &sql.NullInt64{}
 	for insert.Next() {
-		insert.Scan(res)
+		err := insert.Scan(res)
+		if err != nil {
+			return 0, errors.Wrap(err, "can't get id")
+		}
 	}
 
 	return int(res.Int64), nil
@@ -117,22 +120,68 @@ func (r *Request) FromRequest(req *http.Request) error {
 	return nil
 }
 
-func (r *Request) Insert(db *sqlx.DB, id int) error {
+func (r *Request) Insert(db *sqlx.DB, id int) (int, error) {
 	r.URL = id
 
-	insert, err := db.NamedExec(`INSERT INTO request (url_id, proto, proto_major, proto_minor, body, content_length, host, remote_addr, request_uri)
-VALUES (:url, :proto, :proto_major, :proto_minor, :body, :content_length, :host, :remote_addr, :request_uri)`, r)
+	insert, err := db.NamedQuery(`INSERT INTO request (url_id, proto, proto_major, proto_minor, body, content_length, host, remote_addr, request_uri)
+VALUES (:url, :proto, :proto_major, :proto_minor, :body, :content_length, :host, :remote_addr, :request_uri) RETURNING id`, r)
 	if err != nil {
-		return errors.Wrap(err, "can't insert request")
+		return 0, errors.Wrap(err, "can't insert request")
 	}
 
-	rows, err := insert.RowsAffected()
-	if err != nil {
-		return errors.Wrap(err, "can't get affected rows")
+	defer insert.Close()
+
+	res := &sql.NullInt64{}
+	for insert.Next() {
+		err := insert.Scan(res)
+		if err != nil {
+			return 0, errors.Wrap(err, "can't get id")
+		}
 	}
 
-	if rows == 0 {
-		return errors.New("no rows inserted")
+	return int(res.Int64), nil
+}
+
+type Header struct {
+	Name      string `db:"name"`
+	Value     string `db:"value"`
+	RequestID int    `db:"request_id"`
+}
+
+type Headers struct {
+	Arr []Header
+}
+
+func (h *Headers) FromRequest(req *http.Request, reqID int) {
+	for k, v := range req.Header {
+		for _, vv := range v {
+			header := Header{
+				Name:      k,
+				Value:     vv,
+				RequestID: reqID,
+			}
+
+			h.Arr = append(h.Arr, header)
+		}
+	}
+}
+
+func (h *Headers) Insert(db *sqlx.DB) error {
+	for i := range h.Arr {
+		insert, err := db.NamedExec(`INSERT INTO header (request_id, name, value)
+VALUES (:request_id, :name, :value)`, h.Arr[i])
+		if err != nil {
+			return errors.Wrap(err, "can't insert header")
+		}
+
+		rows, err := insert.RowsAffected()
+		if err != nil {
+			return errors.Wrap(err, "can't get affected rows")
+		}
+
+		if rows == 0 {
+			return errors.New("no rows inserted")
+		}
 	}
 
 	return nil
@@ -157,12 +206,19 @@ func SaveUserRequest(db *sqlx.DB, req *http.Request) error {
 	request := &Request{}
 	err = request.FromRequest(req)
 	if err != nil {
-		return errors.Wrap(err, "can't insert url")
+		return errors.Wrap(err, "can't read request")
 	}
 
-	err = request.Insert(db, idUrl)
+	idReq, err := request.Insert(db, idUrl)
 	if err != nil {
 		return errors.Wrap(err, "can't insert request")
+	}
+
+	headers := &Headers{}
+	headers.FromRequest(req, idReq)
+	err = headers.Insert(db)
+	if err != nil {
+		return errors.Wrap(err, "can't insert headers")
 	}
 
 	return nil
