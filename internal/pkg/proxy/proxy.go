@@ -77,13 +77,19 @@ func GetHandleHTTP(client *http.Client, db *sqlx.DB) func(res http.ResponseWrite
 		ui := &UserInfo{}
 		ui.FromURL(req.URL)
 
-		insert, err := db.NamedExec(`INSERT INTO user_info(username, password)
-		VALUES (:password, :username) `, ui)
+		idUserInfo, err := ui.Insert(db)
 		if err != nil {
-			log.Fatal(err)
+			log.WithError(err).Error("can't insert user info")
 		}
 
-		log.Info(insert)
+		url := &URL{}
+		url.FromURL(req.URL)
+		idUrl, err := url.Insert(db, idUserInfo)
+		if err != nil {
+			log.WithError(err).Error("can't insert url")
+		}
+
+		_ = idUrl
 
 		req.RequestURI = ""
 		resp, err := client.Do(req)
