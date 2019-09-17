@@ -74,22 +74,10 @@ func GetHandleHTTP(client *http.Client, db *sqlx.DB) func(res http.ResponseWrite
 		log := getTraceLogger(req.Context())
 		log.WithField("req", req).Info("got")
 
-		ui := &UserInfo{}
-		ui.FromURL(req.URL)
-
-		idUserInfo, err := ui.Insert(db)
+		err := SaveUserRequest(db, req)
 		if err != nil {
-			log.WithError(err).Error("can't insert user info")
+			log.WithError(err).Error("can't save user request")
 		}
-
-		url := &URL{}
-		url.FromURL(req.URL)
-		idUrl, err := url.Insert(db, idUserInfo)
-		if err != nil {
-			log.WithError(err).Error("can't insert url")
-		}
-
-		_ = idUrl
 
 		req.RequestURI = ""
 		resp, err := client.Do(req)

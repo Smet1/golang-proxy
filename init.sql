@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS request
 -- Header Header
     body           bytea,
     content_length INTEGER,
-    Host           TEXT,
+    host           TEXT,
 -- Form url.Values
 -- MultipartForm *multipart.Form
     remote_addr    TEXT,

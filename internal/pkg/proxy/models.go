@@ -2,6 +2,8 @@ package proxy
 
 import (
 	"database/sql"
+	"io/ioutil"
+	"net/http"
 	"net/url"
 
 	"github.com/jmoiron/sqlx"
@@ -78,4 +80,90 @@ VALUES (:scheme, :opaque, :user, :host, :path, :raw_path, :force_query, :raw_que
 	}
 
 	return int(res.Int64), nil
+}
+
+type Request struct {
+	Method     string `db:"method"`
+	URL        int    `db:"url"`
+	Proto      string `db:"proto"`
+	ProtoMajor int    `db:"proto_major"`
+	ProtoMinor int    `db:"proto_minor"`
+	//Header Header
+	Body          []byte `db:"body"`
+	ContentLength int64  `db:"content_length"`
+	Host          string `db:"host"`
+	//Form url.Values
+	//PostForm url.Values
+	//MultipartForm *multipart.Form
+	RemoteAddr string `db:"remote_addr"`
+	RequestURI string `db:"request_uri"`
+}
+
+func (r *Request) FromRequest(req *http.Request) error {
+	r.Method = req.Method
+	r.Proto = req.Proto
+	r.ProtoMajor = req.ProtoMajor
+	r.ProtoMinor = req.ProtoMinor
+	bytes, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		return errors.Wrap(err, "can't read request body")
+	}
+	r.Body = bytes
+	r.ContentLength = req.ContentLength
+	r.Host = req.Host
+	r.RemoteAddr = req.RemoteAddr
+	r.RequestURI = req.RequestURI
+
+	return nil
+}
+
+func (r *Request) Insert(db *sqlx.DB, id int) error {
+	r.URL = id
+
+	insert, err := db.NamedExec(`INSERT INTO request (url_id, proto, proto_major, proto_minor, body, content_length, host, remote_addr, request_uri)
+VALUES (:url, :proto, :proto_major, :proto_minor, :body, :content_length, :host, :remote_addr, :request_uri)`, r)
+	if err != nil {
+		return errors.Wrap(err, "can't insert request")
+	}
+
+	rows, err := insert.RowsAffected()
+	if err != nil {
+		return errors.Wrap(err, "can't get affected rows")
+	}
+
+	if rows == 0 {
+		return errors.New("no rows inserted")
+	}
+
+	return nil
+}
+
+func SaveUserRequest(db *sqlx.DB, req *http.Request) error {
+	ui := &UserInfo{}
+	ui.FromURL(req.URL)
+
+	idUserInfo, err := ui.Insert(db)
+	if err != nil {
+		return errors.Wrap(err, "can't insert user info")
+	}
+
+	u := &URL{}
+	u.FromURL(req.URL)
+	idUrl, err := u.Insert(db, idUserInfo)
+	if err != nil {
+		return errors.Wrap(err, "can't insert url")
+	}
+
+	request := &Request{}
+	err = request.FromRequest(req)
+	if err != nil {
+		return errors.Wrap(err, "can't insert url")
+	}
+
+	err = request.Insert(db, idUrl)
+	if err != nil {
+		return errors.Wrap(err, "can't insert request")
+	}
+
+	return nil
 }
