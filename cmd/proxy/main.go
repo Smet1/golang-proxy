@@ -17,6 +17,17 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+type codeRecorder struct {
+	http.ResponseWriter
+
+	code int
+}
+
+func (w *codeRecorder) WriteHeader(code int) {
+	w.ResponseWriter.WriteHeader(code)
+	w.code = code
+}
+
 func main() {
 	configPath := flag.String(
 		"config",
@@ -47,6 +58,14 @@ func main() {
 	proxyService := proxy.Service{
 		Config: config,
 		Client: httpclients.HTTPClient(),
+		Wrap: func(upstream http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				cr := &codeRecorder{ResponseWriter: w}
+				log.Println("Got Content-Type:", r.Header.Get("Content-Type"))
+				upstream.ServeHTTP(cr, r)
+				log.Println("Got Status:", cr.code)
+			})
+		},
 	}
 
 	server := proxyService.GetServerProxy(log)
@@ -62,17 +81,18 @@ func main() {
 			}
 		}
 	}()
-	go func() {
-		logrus.WithField("port", config.ServeAddrProxy).Info("https service started")
-		if err := server.ListenAndServeTLS(config.Certificate.Pem, config.Certificate.Key); err != nil {
-			if err == http.ErrServerClosed {
-				log.Println("graceful shutdown")
-			} else {
-				log.Fatalf("proxy service, err: %s", err)
-			}
-		}
-	}()
-
+	//go func() {
+	//	logrus.WithField("port", config.ServeAddrProxy).Info("https service started")
+	//	//if err := server.ListenAndServeTLS(config.Certificate.Pem, config.Certificate.Key); err != nil {
+	//	if err := server.ListenAndServe(); err != nil {
+	//		if err == http.ErrServerClosed {
+	//			log.Println("graceful shutdown")
+	//		} else {
+	//			log.Fatalf("proxy service, err: %s", err)
+	//		}
+	//	}
+	//}()
+	log.Fatal(http.ListenAndServe(":8888", &proxyService))
 	sgnl := make(chan os.Signal, 1)
 	signal.Notify(sgnl,
 		syscall.SIGHUP,

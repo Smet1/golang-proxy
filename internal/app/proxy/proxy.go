@@ -3,6 +3,7 @@ package proxy
 import (
 	"crypto/tls"
 	"net/http"
+	"net/http/httputil"
 	"net/url"
 
 	"github.com/lib/pq"
@@ -22,9 +23,10 @@ import (
 type Service struct {
 	Config      Config
 	CertManager *autocert.Manager
-	router      *mux.Router
+	Router      *mux.Router
 	Client      *http.Client
 	ConnDB      *sqlx.DB
+	Wrap        func(upstream http.Handler) http.Handler
 }
 
 func (s *Service) ensureDBConn() error {
@@ -68,15 +70,22 @@ func (s *Service) GetServerProxy(log *logrus.Logger) *http.Server {
 	handlerHTTP := proxy.GetHandleHTTP(s.Client, s.ConnDB)
 	handlerBurst := proxy.GetBurstHandler(s.Client, s.ConnDB)
 
-	s.router = mux.NewRouter()
-	s.router.HandleFunc("/", handlerHTTPS).Methods(http.MethodConnect)
-	s.router.HandleFunc("/", handlerHTTP)
-	s.router.HandleFunc("/burst", handlerBurst).Methods(http.MethodPost)
+	s.Router = mux.NewRouter()
+	s.Router.HandleFunc("/", handlerHTTPS).Methods(http.MethodConnect)
+	s.Router.HandleFunc("/", handlerHTTP)
+	s.Router.HandleFunc("/burst", handlerBurst).Methods(http.MethodPost)
 	return &http.Server{
 		Addr:    s.Config.ServeAddrProxy,
-		Handler: s.router,
+		Handler: s.Router,
 		TLSConfig: &tls.Config{
 			InsecureSkipVerify: true,
+			GetCertificate: func(info *tls.ClientHelloInfo) (certificate *tls.Certificate, e error) {
+				log.WithField("RemoteAddr", info.Conn.RemoteAddr()).Info("kek")
+				log.WithField("LocalAddr", info.Conn.LocalAddr()).Info("kek1")
+				log.WithField("ServerName", info.ServerName).Info("kek2")
+				log.Println("here")
+				return nil, nil
+			},
 		},
 
 		// Disable HTTP/2.
@@ -92,11 +101,11 @@ func (s *Service) GetServerBurst(log *logrus.Logger) *http.Server {
 
 	handlerBurst := proxy.GetBurstHandler(s.Client, s.ConnDB)
 
-	s.router = mux.NewRouter()
-	s.router.HandleFunc("/burst", handlerBurst).Methods(http.MethodPost)
+	s.Router = mux.NewRouter()
+	s.Router.HandleFunc("/burst", handlerBurst).Methods(http.MethodPost)
 	return &http.Server{
 		Addr:    s.Config.ServeAddrBurst,
-		Handler: s.router,
+		Handler: s.Router,
 		TLSConfig: &tls.Config{
 			InsecureSkipVerify: true,
 		},
@@ -104,4 +113,21 @@ func (s *Service) GetServerBurst(log *logrus.Logger) *http.Server {
 		// Disable HTTP/2.
 		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)),
 	}
+}
+
+func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodConnect {
+		logrus.Info("connect")
+		// handle connect
+		return
+	}
+
+	rp := &httputil.ReverseProxy{
+		Director: func(request *http.Request) {
+			r.URL.Host = r.Host
+			r.URL.Scheme = "http"
+		},
+		FlushInterval: 0,
+	}
+	s.Wrap(rp).ServeHTTP(w, r)
 }

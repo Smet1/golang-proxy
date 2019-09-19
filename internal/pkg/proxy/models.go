@@ -223,3 +223,7 @@ func SaveUserRequest(db *sqlx.DB, req *http.Request) (int, error) {
 
 	return idReq, nil
 }
+
+func GetRequest(db *sqlx.DB, id int) *http.Request {
+	return nil
+}
