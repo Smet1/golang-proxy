@@ -2,9 +2,12 @@ package proxy
 
 import (
 	"crypto/tls"
+	"log"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"sync"
 
 	"github.com/lib/pq"
 
@@ -27,6 +30,18 @@ type Service struct {
 	Client      *http.Client
 	ConnDB      *sqlx.DB
 	Wrap        func(upstream http.Handler) http.Handler
+
+	// CA specifies the root CA for generating leaf certs for each incoming
+	// TLS request.
+	CA *tls.Certificate
+
+	// TLSServerConfig specifies the tls.Config to use when generating leaf
+	// cert using CA.
+	TLSServerConfig *tls.Config
+
+	// TLSClientConfig specifies the tls.Config to use when establishing
+	// an upstream connection for proxying.
+	TLSClientConfig *tls.Config
 }
 
 func (s *Service) ensureDBConn() error {
@@ -115,10 +130,77 @@ func (s *Service) GetServerBurst(log *logrus.Logger) *http.Server {
 	}
 }
 
+func (s *Service) cert(names ...string) (*tls.Certificate, error) {
+	return genCert(s.CA, names)
+}
+
 func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodConnect {
 		logrus.Info("connect")
 		// handle connect
+
+		var sconn *tls.Conn
+
+		//openssl x509 -req -in mydomain.com.csr -CA rootCA.crt -CAkey rootCA.key -CAcreateserial -out mydomain.com.crt -days 500 -sha256
+		//openssl req -new -sha256 -key mydomain.com.key -subj "/C=US/ST=CA/O=MyOrg, Inc./CN=mydomain.com" -out mydomain.com.csr
+		//openssl x509 -req -in mydomain.com.csr -CA rootCA.crt -CAkey rootCA.key -CAcreateserial -out mydomain.com.crt -days 500 -sha256
+		host, _, err := net.SplitHostPort(r.Host)
+		if err != nil {
+			log.Println("cannot determine cert name for " + r.Host)
+			http.Error(w, "no upstream", 503)
+			return
+		}
+
+		provisionalCert, err := s.cert(host)
+		if err != nil {
+			log.Println("cert", err)
+			http.Error(w, "no upstream", 503)
+			return
+		}
+
+		sConfig := &tls.Config{}
+		if s.TLSServerConfig != nil {
+			*sConfig = *s.TLSServerConfig
+		}
+		sConfig.Certificates = []tls.Certificate{*provisionalCert}
+		sConfig.GetCertificate = func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+			cConfig := &tls.Config{}
+			if s.TLSClientConfig != nil {
+				*cConfig = *s.TLSClientConfig
+			}
+			cConfig.ServerName = hello.ServerName
+			sconn, err = tls.Dial("tcp", r.Host, cConfig)
+			if err != nil {
+				log.Println("dial", r.Host, err)
+				return nil, err
+			}
+			return s.cert(hello.ServerName)
+		}
+
+		cconn, err := handshake(w, sConfig)
+		if err != nil {
+			log.Println("handshake", r.Host, err)
+			return
+		}
+		defer cconn.Close()
+		if sconn == nil {
+			log.Println("could not determine cert name for " + r.Host)
+			return
+		}
+		defer sconn.Close()
+
+		od := &oneShotDialer{c: sconn}
+		rp := &httputil.ReverseProxy{
+			Director:      httpsDirector,
+			Transport:     &http.Transport{DialTLS: od.Dial},
+			FlushInterval: 0,
+		}
+
+		ch := make(chan int)
+		wc := &onCloseConn{cconn, func() { ch <- 0 }}
+		http.Serve(&oneShotListener{wc}, s.Wrap(rp))
+		<-ch
+
 		return
 	}
 
@@ -130,4 +212,86 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		FlushInterval: 0,
 	}
 	s.Wrap(rp).ServeHTTP(w, r)
+}
+
+func httpsDirector(r *http.Request) {
+	r.URL.Host = r.Host
+	r.URL.Scheme = "https"
+}
+
+var okHeader = []byte("HTTP/1.1 200 OK\r\n\r\n")
+
+func handshake(w http.ResponseWriter, config *tls.Config) (net.Conn, error) {
+	raw, _, err := w.(http.Hijacker).Hijack()
+	if err != nil {
+		http.Error(w, "no upstream", 503)
+		return nil, err
+	}
+	if _, err = raw.Write(okHeader); err != nil {
+		raw.Close()
+		return nil, err
+	}
+	conn := tls.Server(raw, config)
+	err = conn.Handshake()
+	if err != nil {
+		conn.Close()
+		raw.Close()
+		return nil, err
+	}
+	return conn, nil
+}
+
+// A oneShotDialer implements net.Dialer whos Dial only returns a
+// net.Conn as specified by c followed by an error for each subsequent Dial.
+type oneShotDialer struct {
+	c  net.Conn
+	mu sync.Mutex
+}
+
+func (d *oneShotDialer) Dial(network, addr string) (net.Conn, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.c == nil {
+		return nil, errors.New("closed")
+	}
+	c := d.c
+	d.c = nil
+	return c, nil
+}
+
+// A oneShotListener implements net.Listener whos Accept only returns a
+// net.Conn as specified by c followed by an error for each subsequent Accept.
+type oneShotListener struct {
+	c net.Conn
+}
+
+func (l *oneShotListener) Accept() (net.Conn, error) {
+	if l.c == nil {
+		return nil, errors.New("closed")
+	}
+	c := l.c
+	l.c = nil
+	return c, nil
+}
+
+func (l *oneShotListener) Close() error {
+	return nil
+}
+
+func (l *oneShotListener) Addr() net.Addr {
+	return l.c.LocalAddr()
+}
+
+// A onCloseConn implements net.Conn and calls its f on Close.
+type onCloseConn struct {
+	net.Conn
+	f func()
+}
+
+func (c *onCloseConn) Close() error {
+	if c.f != nil {
+		c.f()
+		c.f = nil
+	}
+	return c.Conn.Close()
 }
