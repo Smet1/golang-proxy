@@ -83,6 +83,7 @@ func main() {
 				log.Println("Got Status:", cr.code)
 			})
 		},
+		Log: log,
 	}
 
 	serverBurst := proxyService.GetServerBurst(log)

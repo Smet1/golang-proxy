@@ -1,7 +1,7 @@
 protocol: 'https'
 certificate:
-  pem: 'server.pem'
-  key: 'server.key'
+  pem: 'ca-cert.pem'
+  key: 'ca-key.pem'
 timeout: '10s'
 serve_addr_proxy: ':8888'
 serve_addr_burst: ':8000'

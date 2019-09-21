@@ -29,6 +29,7 @@ type Service struct {
 	Router      *mux.Router
 	Client      *http.Client
 	ConnDB      *sqlx.DB
+	Log         *logrus.Logger
 	Wrap        func(upstream http.Handler) http.Handler
 
 	// CA specifies the root CA for generating leaf certs for each incoming
@@ -146,14 +147,14 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		//openssl x509 -req -in mydomain.com.csr -CA rootCA.crt -CAkey rootCA.key -CAcreateserial -out mydomain.com.crt -days 500 -sha256
 		host, _, err := net.SplitHostPort(r.Host)
 		if err != nil {
-			log.Println("cannot determine cert name for " + r.Host)
+			s.Log.WithError(err).Error("cannot determine cert name")
 			http.Error(w, "no upstream", 503)
 			return
 		}
 
 		provisionalCert, err := s.cert(host)
 		if err != nil {
-			log.Println("cert", err)
+			s.Log.WithError(err).Error("cert")
 			http.Error(w, "no upstream", 503)
 			return
 		}
@@ -179,12 +180,12 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		cconn, err := handshake(w, sConfig)
 		if err != nil {
-			log.Println("handshake", r.Host, err)
+			s.Log.WithField("host", r.Host).WithError(err).Error("handshake err")
 			return
 		}
 		defer cconn.Close()
 		if sconn == nil {
-			log.Println("could not determine cert name for " + r.Host)
+			s.Log.WithError(err).Error("cannot determine cert name")
 			return
 		}
 		defer sconn.Close()
