@@ -117,7 +117,6 @@ func main() {
 }
 
 func loadCA() (cert tls.Certificate, err error) {
-	// TODO(kr): check file permissions
 	cert, err = tls.LoadX509KeyPair(certFile, keyFile)
 	if os.IsNotExist(err) {
 		cert, err = genCA()
