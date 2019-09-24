@@ -6,14 +6,3 @@ timeout: '10s'
 serve_addr_proxy: ':8888'
 serve_addr_burst: ':8000'
 db:
-  database: "postgres"
-  username: ""
-  password: ""
-  name: "postgres"
-  ssl_mode: "disable"
-  host: "localhost:5432"
-#  username: "docker"
-#  password: "docker"
-#  name: "docker"
-#  ssl_mode: "disable"
-#  host: "localhost:5432"

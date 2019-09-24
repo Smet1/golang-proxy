@@ -76,14 +76,16 @@ func main() {
 		CA:     &ca,
 		Client: httpclients.HTTPClient(),
 		Wrap: func(upstream http.Handler) http.Handler {
-			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				cr := &codeRecorder{ResponseWriter: w}
-				log.Println("Got Content-Type:", r.Header.Get("Content-Type"))
-				upstream.ServeHTTP(cr, r)
-				log.Println("Got Status:", cr.code)
+			return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+				upstream.ServeHTTP(res, req)
 			})
 		},
 		Log: log,
+	}
+
+	err = proxyService.EnsureDBConn()
+	if err != nil {
+		log.WithError(err).Fatal("can't ensure db connection")
 	}
 
 	serverBurst := proxyService.GetServerBurst(log)
@@ -99,7 +101,8 @@ func main() {
 		}
 	}()
 
-	log.Fatal(http.ListenAndServe(":8888", &proxyService))
+	logrus.WithField("port", config.ServeAddrProxy).Info("proxy service started")
+	go log.Fatal(http.ListenAndServe(config.ServeAddrProxy, &proxyService))
 
 	sgnl := make(chan os.Signal, 1)
 	signal.Notify(sgnl,

@@ -55,7 +55,7 @@ func (rs *RequestSave) GetHTTPForm() *http.Request {
 	}
 }
 
-func SaveRequest(req *http.Request, collection *mgo.Collection) error {
+func SaveRequest(req *http.Request, collection *mgo.Collection) (string, error) {
 	b, _ := ioutil.ReadAll(req.Body)
 	reqSave := RequestSave{
 		ID:               bson.NewObjectId(),
@@ -79,10 +79,10 @@ func SaveRequest(req *http.Request, collection *mgo.Collection) error {
 
 	err := collection.Insert(reqSave)
 	if err != nil {
-		return errors.Wrap(err, "can't insert request")
+		return "", errors.Wrap(err, "can't insert request")
 	}
 
-	return nil
+	return reqSave.ID.Hex(), nil
 }
 
 func GetSavedRequest(ID string, collection *mgo.Collection) (*http.Request, error) {
