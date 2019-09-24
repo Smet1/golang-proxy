@@ -2,12 +2,14 @@ package proxy
 
 import (
 	"crypto/tls"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"sync"
+	"time"
 
 	"github.com/lib/pq"
 
@@ -21,6 +23,7 @@ import (
 
 	"github.com/Smet1/golang-proxy/internal/pkg/proxy"
 	"github.com/jmoiron/sqlx"
+	"gopkg.in/mgo.v2"
 )
 
 type Service struct {
@@ -43,6 +46,7 @@ type Service struct {
 	// TLSClientConfig specifies the tls.Config to use when establishing
 	// an upstream connection for proxying.
 	TLSClientConfig *tls.Config
+	Collection      *mgo.Collection
 }
 
 func (s *Service) ensureDBConn() error {
@@ -73,6 +77,17 @@ func (s *Service) ensureDBConn() error {
 
 	s.ConnDB = instance
 
+	session, err := mgo.DialWithInfo(&mgo.DialInfo{
+		Addrs:    []string{fmt.Sprintf("%s:%s", "localhost", "27017")},
+		Timeout:  10 * time.Second,
+		Database: "requests",
+	})
+	if err != nil {
+		return errors.Wrap(err, "can't dial mongo")
+	}
+
+	s.Collection = session.DB("requests").C("requests")
+
 	return nil
 }
 
@@ -84,7 +99,7 @@ func (s *Service) GetServerProxy(log *logrus.Logger) *http.Server {
 
 	handlerHTTPS := proxy.GetHandleTunneling(s.Config.Timeout.Duration)
 	handlerHTTP := proxy.GetHandleHTTP(s.Client, s.ConnDB)
-	handlerBurst := proxy.GetBurstHandler(s.Client, s.ConnDB)
+	handlerBurst := proxy.GetBurstHandler(s.Client, s.Collection)
 
 	s.Router = mux.NewRouter()
 	s.Router.HandleFunc("/", handlerHTTPS).Methods(http.MethodConnect)
@@ -115,7 +130,7 @@ func (s *Service) GetServerBurst(log *logrus.Logger) *http.Server {
 		log.WithError(err).Fatal("can't ensure connection")
 	}
 
-	handlerBurst := proxy.GetBurstHandler(s.Client, s.ConnDB)
+	handlerBurst := proxy.GetBurstHandler(s.Client, s.Collection)
 
 	s.Router = mux.NewRouter()
 	s.Router.HandleFunc("/burst", handlerBurst).Methods(http.MethodPost)
@@ -135,27 +150,27 @@ func (s *Service) cert(names ...string) (*tls.Certificate, error) {
 	return genCert(s.CA, names)
 }
 
-func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodConnect {
-		logrus.Info("connect")
-		// handle connect
+func (s *Service) ServeHTTP(res http.ResponseWriter, req *http.Request) {
+	err := proxy.SaveRequest(req, s.Collection)
+	if err != nil {
+		s.Log.WithError(err).Error("can't save request")
+	}
+	if req.Method == http.MethodConnect {
+		logrus.WithField("request", req).Info("connect")
 
 		var sconn *tls.Conn
 
-		//openssl x509 -req -in mydomain.com.csr -CA rootCA.crt -CAkey rootCA.key -CAcreateserial -out mydomain.com.crt -days 500 -sha256
-		//openssl req -new -sha256 -key mydomain.com.key -subj "/C=US/ST=CA/O=MyOrg, Inc./CN=mydomain.com" -out mydomain.com.csr
-		//openssl x509 -req -in mydomain.com.csr -CA rootCA.crt -CAkey rootCA.key -CAcreateserial -out mydomain.com.crt -days 500 -sha256
-		host, _, err := net.SplitHostPort(r.Host)
+		host, _, err := net.SplitHostPort(req.Host)
 		if err != nil {
 			s.Log.WithError(err).Error("cannot determine cert name")
-			http.Error(w, "no upstream", 503)
+			http.Error(res, "no upstream", 503)
 			return
 		}
 
 		provisionalCert, err := s.cert(host)
 		if err != nil {
 			s.Log.WithError(err).Error("cert")
-			http.Error(w, "no upstream", 503)
+			http.Error(res, "no upstream", 503)
 			return
 		}
 
@@ -170,17 +185,17 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				*cConfig = *s.TLSClientConfig
 			}
 			cConfig.ServerName = hello.ServerName
-			sconn, err = tls.Dial("tcp", r.Host, cConfig)
+			sconn, err = tls.Dial("tcp", req.Host, cConfig)
 			if err != nil {
-				log.Println("dial", r.Host, err)
+				log.Println("dial", req.Host, err)
 				return nil, err
 			}
 			return s.cert(hello.ServerName)
 		}
 
-		cconn, err := handshake(w, sConfig)
+		cconn, err := handshake(res, sConfig)
 		if err != nil {
-			s.Log.WithField("host", r.Host).WithError(err).Error("handshake err")
+			s.Log.WithField("host", req.Host).WithError(err).Error("handshake err")
 			return
 		}
 		defer cconn.Close()
@@ -199,20 +214,23 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		ch := make(chan int)
 		wc := &onCloseConn{cconn, func() { ch <- 0 }}
-		http.Serve(&oneShotListener{wc}, s.Wrap(rp))
+		err = http.Serve(&oneShotListener{wc}, s.Wrap(rp))
 		<-ch
+		if err != nil {
+			s.Log.WithError(err).Error("one shot listener err")
+		}
 
 		return
 	}
 
 	rp := &httputil.ReverseProxy{
 		Director: func(request *http.Request) {
-			r.URL.Host = r.Host
-			r.URL.Scheme = "http"
+			req.URL.Host = req.Host
+			req.URL.Scheme = "http"
 		},
 		FlushInterval: 0,
 	}
-	s.Wrap(rp).ServeHTTP(w, r)
+	s.Wrap(rp).ServeHTTP(res, req)
 }
 
 func httpsDirector(r *http.Request) {

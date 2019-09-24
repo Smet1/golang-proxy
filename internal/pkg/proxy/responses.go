@@ -43,8 +43,8 @@ func ErrResponse(res http.ResponseWriter, errCode int, errMsg string) {
 	addErrBody(res, errMsg)
 }
 
-func ResponseObject(res http.ResponseWriter, code int, body interface{}) {
+func ResponseBinaryObject(res http.ResponseWriter, code int, body []byte) {
 	res.Header().Set("Content-Type", "application/json")
 	addErrHeader(res, code)
-	addBody(res, body)
+	res.Write(body)
 }

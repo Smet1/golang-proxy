@@ -3,11 +3,14 @@ package proxy
 import (
 	"context"
 	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"strconv"
 	"sync"
 	"time"
+
+	"gopkg.in/mgo.v2"
 
 	"github.com/jmoiron/sqlx"
 
@@ -70,20 +73,44 @@ func transfer(ctx context.Context, destination io.WriteCloser, source io.ReadClo
 	}
 }
 
-func GetBurstHandler(client *http.Client, db *sqlx.DB) func(res http.ResponseWriter, req *http.Request) {
+type Resp struct {
+	ID   string        `json:"id"`
+	Resp http.Response `json:"resp"`
+}
+
+func GetBurstHandler(client *http.Client, col *mgo.Collection) func(res http.ResponseWriter, req *http.Request) {
 	return func(res http.ResponseWriter, req *http.Request) {
 		log := getTraceLogger(req.Context())
 		log.WithField("req", req).Info("got")
 
 		query := req.URL.Query()
-		_, err := strconv.Atoi(query.Get("id"))
-		if err != nil {
-			ErrResponse(res, http.StatusBadRequest, "invalid id in query")
+		id := query.Get("id")
 
-			log.WithError(err).Error("can't convert id to int")
+		savedReq, err := GetSavedRequest(id, col)
+		if err != nil {
+			ErrResponse(res, http.StatusBadRequest, "can't get request")
+
+			log.WithError(err).Error("can't get request")
 			return
 		}
 
+		savedReq.RequestURI = ""
+		resp, err := client.Do(savedReq)
+		if err != nil {
+			ErrResponse(res, http.StatusInternalServerError, "can't do request")
+
+			log.WithError(err).Error("can't do request")
+			return
+		}
+
+		b, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			ErrResponse(res, http.StatusInternalServerError, "can't do read response body")
+
+			log.WithError(err).Error("can't do read response body")
+			return
+		}
+		ResponseBinaryObject(res, resp.StatusCode, b)
 	}
 }
 
