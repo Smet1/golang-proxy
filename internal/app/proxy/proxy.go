@@ -94,14 +94,16 @@ func (s *Service) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 		host, _, err := net.SplitHostPort(req.Host)
 		if err != nil {
 			s.Log.WithError(err).Error("cannot determine cert name")
-			http.Error(res, "no upstream", 503)
+			proxy.ErrResponse(res, http.StatusForbidden, "no upstream")
+
 			return
 		}
 
 		provisionalCert, err := s.cert(host)
 		if err != nil {
 			s.Log.WithError(err).Error("cert")
-			http.Error(res, "no upstream", 503)
+			proxy.ErrResponse(res, http.StatusForbidden, "no upstream")
+
 			return
 		}
 
@@ -119,6 +121,8 @@ func (s *Service) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 			sconn, err = tls.Dial("tcp", req.Host, cConfig)
 			if err != nil {
 				log.Println("dial", req.Host, err)
+				s.Log.WithError(err).WithField("host", req.Host).Error("got err on tls dial")
+
 				return nil, err
 			}
 			return s.cert(hello.ServerName)
@@ -145,11 +149,8 @@ func (s *Service) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 
 		ch := make(chan int)
 		wc := &onCloseConn{cconn, func() { ch <- 0 }}
-		err = http.Serve(&oneShotListener{wc}, rp)
+		_ = http.Serve(&oneShotListener{wc}, rp)
 		<-ch
-		if err != nil {
-			s.Log.WithError(err).Error("one shot listener err")
-		}
 
 		return
 	}

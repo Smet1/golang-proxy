@@ -21,17 +21,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type codeRecorder struct {
-	http.ResponseWriter
-
-	code int
-}
-
-func (w *codeRecorder) WriteHeader(code int) {
-	w.ResponseWriter.WriteHeader(code)
-	w.code = code
-}
-
 var (
 	hostname, _ = os.Hostname()
 
