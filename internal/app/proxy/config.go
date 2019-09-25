@@ -36,12 +36,11 @@ type Config struct {
 }
 
 type DB struct {
-	Database string `yaml:"database"`
-	Username string `yaml:"username"`
-	Name     string `yaml:"name"`
-	Password string `yaml:"password"`
-	SSLMode  string `yaml:"ssl_mode"`
-	Host     string `yaml:"host"`
+	Host           string   `yaml:"host"`
+	Port           string   `yaml:"port"`
+	Timeout        Duration `yaml:"timeout"`
+	DatabaseName   string   `yaml:"database_name"`
+	CollectionName string   `yaml:"collection_name"`
 }
 
 type Certificate struct {

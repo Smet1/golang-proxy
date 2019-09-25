@@ -12,6 +12,8 @@ import (
 	"path"
 	"syscall"
 
+	proxy2 "github.com/Smet1/golang-proxy/internal/pkg/proxy"
+
 	"github.com/Smet1/golang-proxy/internal/pkg/httpclients"
 
 	"github.com/Smet1/golang-proxy/internal/pkg/configreader"
@@ -64,17 +66,33 @@ func main() {
 		Config: config,
 		CA:     &ca,
 		Client: httpclients.HTTPClient(),
-		Wrap: func(upstream http.Handler) http.Handler {
-			return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
-				upstream.ServeHTTP(res, req)
-			})
-		},
-		Log: log,
+		Log:    log,
 	}
 
-	err = proxyService.EnsureDBConn()
+	err = proxyService.EnsureDBConn(&config.DB)
 	if err != nil {
 		log.WithError(err).Fatal("can't ensure db connection")
+	}
+
+	proxyService.Wrap = func(upstream http.Handler) http.Handler {
+		return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+			id := ""
+			if req.Method != http.MethodConnect {
+				id, err = proxy2.SaveRequest(req, proxyService.Collection)
+				if err != nil {
+					log.WithError(err).Error("can't save request")
+				}
+				log.WithFields(map[string]interface{}{
+					"id":     id,
+					"host":   req.Host,
+					"scheme": req.URL.Scheme,
+				}).Info("saved")
+			}
+
+			upstream.ServeHTTP(res, req)
+			res.Header().Add("ID", id)
+			log.Println(req)
+		})
 	}
 
 	serverBurst := proxyService.GetServerBurst(log)

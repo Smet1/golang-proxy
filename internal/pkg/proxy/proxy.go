@@ -4,6 +4,7 @@ import (
 	"context"
 	"io/ioutil"
 	"net/http"
+	"strings"
 
 	"gopkg.in/mgo.v2"
 
@@ -34,7 +35,8 @@ func GetBurstHandler(client *http.Client, col *mgo.Collection) func(res http.Res
 			log.WithError(err).Error("can't get request")
 			return
 		}
-
+		savedReq.URL.Host = savedReq.Host
+		savedReq.URL.Scheme = strings.ToLower(strings.Split(savedReq.Proto, "/")[0])
 		savedReq.RequestURI = ""
 		resp, err := client.Do(savedReq)
 		if err != nil {

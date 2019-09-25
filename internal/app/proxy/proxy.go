@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"sync"
-	"time"
 
 	"github.com/pkg/errors"
 
@@ -44,27 +43,22 @@ type Service struct {
 	Collection      *mgo.Collection
 }
 
-func (s *Service) EnsureDBConn() error {
+func (s *Service) EnsureDBConn(config *DB) error {
 	session, err := mgo.DialWithInfo(&mgo.DialInfo{
-		Addrs:    []string{fmt.Sprintf("%s:%s", "localhost", "27017")},
-		Timeout:  10 * time.Second,
-		Database: "requests",
+		Addrs:    []string{fmt.Sprintf("%s:%s", config.Host, config.Port)},
+		Timeout:  config.Timeout.Duration,
+		Database: config.DatabaseName,
 	})
 	if err != nil {
 		return errors.Wrap(err, "can't dial mongo")
 	}
 
-	s.Collection = session.DB("requests").C("requests")
+	s.Collection = session.DB(config.DatabaseName).C(config.CollectionName)
 
 	return nil
 }
 
 func (s *Service) GetServerBurst(logger *logrus.Logger) *http.Server {
-	err := s.EnsureDBConn()
-	if err != nil {
-		logger.WithError(err).Fatal("can't ensure connection")
-	}
-
 	handlerBurst := proxy.GetBurstHandler(s.Client, s.Collection)
 
 	s.Router = mux.NewRouter()
@@ -81,8 +75,6 @@ func (s *Service) cert(names ...string) (*tls.Certificate, error) {
 
 func (s *Service) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 	if req.Method == http.MethodConnect {
-		logrus.WithField("request", req).Info("connect")
-
 		var sconn *tls.Conn
 
 		host, _, err := net.SplitHostPort(req.Host)
@@ -125,11 +117,13 @@ func (s *Service) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 		cconn, err := handshake(res, sConfig, s.Log)
 		if err != nil {
 			s.Log.WithField("host", req.Host).WithError(err).Error("handshake err")
+
 			return
 		}
 		defer cconn.Close()
 		if sconn == nil {
 			s.Log.WithError(err).Error("cannot determine cert name")
+
 			return
 		}
 		defer sconn.Close()
@@ -143,17 +137,11 @@ func (s *Service) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 
 		ch := make(chan int)
 		wc := &onCloseConn{cconn, func() { ch <- 0 }}
-		_ = http.Serve(&oneShotListener{wc}, rp)
+		_ = http.Serve(&oneShotListener{wc}, s.Wrap(rp))
 		<-ch
 
 		return
 	}
-
-	id, err := proxy.SaveRequest(req, s.Collection)
-	if err != nil {
-		s.Log.WithError(err).Error("can't save request")
-	}
-	res.Header().Add("ID", id)
 
 	rp := &httputil.ReverseProxy{
 		Director: func(request *http.Request) {
