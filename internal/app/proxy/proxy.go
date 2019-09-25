@@ -59,10 +59,10 @@ func (s *Service) EnsureDBConn() error {
 	return nil
 }
 
-func (s *Service) GetServerBurst(log *logrus.Logger) *http.Server {
+func (s *Service) GetServerBurst(logger *logrus.Logger) *http.Server {
 	err := s.EnsureDBConn()
 	if err != nil {
-		log.WithError(err).Fatal("can't ensure connection")
+		logger.WithError(err).Fatal("can't ensure connection")
 	}
 
 	handlerBurst := proxy.GetBurstHandler(s.Client, s.Collection)
@@ -72,12 +72,6 @@ func (s *Service) GetServerBurst(log *logrus.Logger) *http.Server {
 	return &http.Server{
 		Addr:    s.Config.ServeAddrBurst,
 		Handler: s.Router,
-		TLSConfig: &tls.Config{
-			InsecureSkipVerify: true,
-		},
-
-		// Disable HTTP/2.
-		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)),
 	}
 }
 
@@ -109,13 +103,13 @@ func (s *Service) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 
 		sConfig := &tls.Config{}
 		if s.TLSServerConfig != nil {
-			*sConfig = *s.TLSServerConfig
+			sConfig = s.TLSServerConfig
 		}
 		sConfig.Certificates = []tls.Certificate{*provisionalCert}
 		sConfig.GetCertificate = func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 			cConfig := &tls.Config{}
 			if s.TLSClientConfig != nil {
-				*cConfig = *s.TLSClientConfig
+				cConfig = s.TLSClientConfig
 			}
 			cConfig.ServerName = hello.ServerName
 			sconn, err = tls.Dial("tcp", req.Host, cConfig)
@@ -128,7 +122,7 @@ func (s *Service) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 			return s.cert(hello.ServerName)
 		}
 
-		cconn, err := handshake(res, sConfig)
+		cconn, err := handshake(res, sConfig, s.Log)
 		if err != nil {
 			s.Log.WithField("host", req.Host).WithError(err).Error("handshake err")
 			return
@@ -178,23 +172,29 @@ func httpsDirector(r *http.Request) {
 
 var okHeader = []byte("HTTP/1.1 200 OK\r\n\r\n")
 
-func handshake(w http.ResponseWriter, config *tls.Config) (net.Conn, error) {
-	raw, _, err := w.(http.Hijacker).Hijack()
+func handshake(res http.ResponseWriter, config *tls.Config, logger *logrus.Logger) (net.Conn, error) {
+	raw, _, err := res.(http.Hijacker).Hijack()
 	if err != nil {
-		http.Error(w, "no upstream", 503)
+		logger.WithError(err).Error("no upstream")
+		proxy.ErrResponse(res, http.StatusForbidden, "no upstream")
+
 		return nil, err
 	}
 	if _, err = raw.Write(okHeader); err != nil {
 		raw.Close()
+
 		return nil, err
 	}
+
 	conn := tls.Server(raw, config)
 	err = conn.Handshake()
 	if err != nil {
 		conn.Close()
 		raw.Close()
+
 		return nil, err
 	}
+
 	return conn, nil
 }
 

@@ -6,6 +6,11 @@ import (
 	"github.com/pkg/errors"
 )
 
+const (
+	HTTP  = "http"
+	HTTPS = "https"
+)
+
 type Duration struct {
 	time.Duration
 }
@@ -45,7 +50,7 @@ type Certificate struct {
 }
 
 func (c *Config) Validate() error {
-	if c.Protocol != "http" && c.Protocol != "https" {
+	if c.Protocol != HTTP && c.Protocol != HTTPS {
 		return errors.New("protocol must be either http or https")
 	}
 

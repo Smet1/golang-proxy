@@ -3,6 +3,7 @@ package proxy
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 )
 
@@ -14,14 +15,14 @@ func addOkHeader(res http.ResponseWriter) {
 	res.WriteHeader(http.StatusOK)
 }
 
-func addBody(res http.ResponseWriter, bodyMessage interface{}) {
+func addBody(res io.Writer, bodyMessage interface{}) {
 	marshalBody, err := json.Marshal(bodyMessage)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 
-	res.Write(marshalBody)
+	_, _ = res.Write(marshalBody)
 }
 
 func OkResponse(res http.ResponseWriter, bodyMessage interface{}) {
@@ -33,7 +34,7 @@ func addErrHeader(res http.ResponseWriter, errCode int) {
 	res.WriteHeader(errCode)
 }
 
-func addErrBody(res http.ResponseWriter, errMsg string) {
+func addErrBody(res io.Writer, errMsg string) {
 	addBody(res, errorResponse{Message: errMsg})
 }
 
@@ -46,5 +47,5 @@ func ErrResponse(res http.ResponseWriter, errCode int, errMsg string) {
 func ResponseBinaryObject(res http.ResponseWriter, code int, body []byte) {
 	res.Header().Set("Content-Type", "application/json")
 	addErrHeader(res, code)
-	res.Write(body)
+	_, _ = res.Write(body)
 }

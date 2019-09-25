@@ -85,9 +85,9 @@ func SaveRequest(req *http.Request, collection *mgo.Collection) (string, error) 
 	return reqSave.ID.Hex(), nil
 }
 
-func GetSavedRequest(ID string, collection *mgo.Collection) (*http.Request, error) {
+func GetSavedRequest(id string, collection *mgo.Collection) (*http.Request, error) {
 	r := &RequestSave{}
-	err := collection.FindId(bson.ObjectIdHex(ID)).One(r)
+	err := collection.FindId(bson.ObjectIdHex(id)).One(r)
 	if err != nil {
 		return nil, errors.Wrap(err, "can't get request")
 	}

@@ -12,10 +12,6 @@ linters-settings:
   goconst:
     min-len: 2
     min-occurrences: 2
-  depguard:
-    list-type: blacklist
-    packages:
-      - gitlab.services.mts.ru/3click/cire2
   misspell:
     locale: US
   lll:

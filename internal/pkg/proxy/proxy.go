@@ -43,6 +43,7 @@ func GetBurstHandler(client *http.Client, col *mgo.Collection) func(res http.Res
 			log.WithError(err).Error("can't do request")
 			return
 		}
+		defer resp.Body.Close()
 
 		b, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
