@@ -7,7 +7,7 @@ serve_addr_proxy: ':8888'
 serve_addr_burst: ':8000'
 db:
   host: 'localhost'
-  port: '27017'
+  port: '27051'
   timeout: '10s'
   database_name: 'requests'
   collection_name: 'requests'
