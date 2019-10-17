@@ -4,7 +4,7 @@ FROM golang:alpine AS build
 WORKDIR /server
 COPY . .
 
-RUN go build -mod=vendor cmd/proxy/main.go
+RUN go build cmd/proxy/main.go
 
 # Копируем на чистый образ
 FROM alpine
